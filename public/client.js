@@ -1,10 +1,11 @@
-// public/client.js
+// public/client.js - 客户端(安全增强版)
 
 // 全局变量
 let socket;
 let currentUsername = '';
 let currentRoom = '';
 let isDarkMode = false;
+let isConnected = false;
 
 // 获取 DOM 元素
 const loginContainer = document.getElementById('login-container');
@@ -23,80 +24,203 @@ const currentRoomSpan = document.getElementById('current-room');
 const userListContent = document.getElementById('user-list-content');
 const userCount = document.getElementById('user-count');
 
+// HTML转义函数,防止XSS攻击
+function escapeHtml(text) {
+    if (!text || typeof text !== 'string') {
+        return '';
+    }
+    
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+        '/': '&#x2F;'
+    };
+    
+    return text.replace(/[&<>"'/]/g, function(m) { return map[m]; });
+}
+
+// 验证输入
+function validateUsername(username) {
+    if (!username || typeof username !== 'string') {
+        return { valid: false, message: '用户名不能为空' };
+    }
+    
+    username = username.trim();
+    
+    if (username.length < 1) {
+        return { valid: false, message: '用户名不能为空' };
+    }
+    
+    if (username.length > 20) {
+        return { valid: false, message: '用户名长度不能超过20个字符' };
+    }
+    
+    // 只允许字母、数字、中文和下划线
+    if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]+$/.test(username)) {
+        return { valid: false, message: '用户名只能包含字母、数字、中文和下划线' };
+    }
+    
+    return { valid: true };
+}
+
+function validateRoom(room) {
+    if (!room || typeof room !== 'string') {
+        return { valid: false, message: '房间号不能为空' };
+    }
+    
+    room = room.trim();
+    
+    if (room.length < 1) {
+        return { valid: false, message: '房间号不能为空' };
+    }
+    
+    if (room.length > 20) {
+        return { valid: false, message: '房间号长度不能超过20个字符' };
+    }
+    
+    // 只允许字母、数字、下划线和短横线
+    if (!/^[a-zA-Z0-9_-]+$/.test(room)) {
+        return { valid: false, message: '房间号只能包含字母、数字、下划线和短横线' };
+    }
+    
+    return { valid: true };
+}
+
+function validateMessage(message) {
+    if (!message || typeof message !== 'string') {
+        return { valid: false, message: '消息内容不能为空' };
+    }
+    
+    message = message.trim();
+    
+    if (message.length < 1) {
+        return { valid: false, message: '消息内容不能为空' };
+    }
+    
+    if (message.length > 500) {
+        return { valid: false, message: '消息长度不能超过500个字符' };
+    }
+    
+    return { valid: true };
+}
+
 // 登录功能
 joinBtn.addEventListener('click', joinRoom);
 
 function joinRoom() {
+    // 防止重复连接
+    if (isConnected && socket) {
+        alert('您已经在聊天室中');
+        return;
+    }
+
     const username = usernameInput.value.trim();
     const room = roomInput.value.trim();
 
-    if (!username || !room) {
-        alert('请输入用户名和房间号');
+    // 验证用户名
+    const usernameValidation = validateUsername(username);
+    if (!usernameValidation.valid) {
+        alert(usernameValidation.message);
+        usernameInput.focus();
+        return;
+    }
+
+    // 验证房间号
+    const roomValidation = validateRoom(room);
+    if (!roomValidation.valid) {
+        alert(roomValidation.message);
+        roomInput.focus();
         return;
     }
 
     currentUsername = username;
     currentRoom = room;
 
-    // 连接到服务器
-    socket = io();
+    try {
+        // 连接到服务器
+        socket = io();
 
-    // 发送加入房间事件
-    socket.emit('join room', { username, room });
+        // 发送加入房间事件
+        socket.emit('join room', { username, room });
 
-    // 监听连接成功事件
-    socket.on('connect', () => {
-        console.log('已连接到服务器');
-    });
+        // 监听连接成功事件
+        socket.on('connect', () => {
+            console.log('已连接到服务器');
+            isConnected = true;
+        });
 
-    // 监听加入房间的成功确认
-    socket.on('room joined', (data) => {
-        showChatRoom();
-        addSystemMessage(`欢迎 ${username} 加入房间 "${room}"`);
-        currentUsernameSpan.textContent = username;
-        currentRoomSpan.textContent = room;
-    });
+        // 监听连接错误
+        socket.on('connect_error', (error) => {
+            console.error('连接错误:', error);
+            alert('连接服务器失败,请检查网络连接');
+            isConnected = false;
+        });
 
-    // 监听房间历史消息
-    socket.on('room history', (messages) => {
-        if (messages && messages.length > 0) {
-            addSystemMessage(`--- 已加载 ${messages.length} 条历史消息 ---`);
-            messages.forEach(msg => {
-                addMessage({
-                    username: msg.username,
-                    text: msg.message,
-                    time: msg.timestamp,
-                    socketId: socket.id
+        // 监听断开连接
+        socket.on('disconnect', (reason) => {
+            console.log('已断开连接:', reason);
+            isConnected = false;
+            alert('与服务器断开连接');
+            leaveRoom();
+        });
+
+        // 监听加入房间的成功确认
+        socket.on('room joined', (data) => {
+            showChatRoom();
+            addSystemMessage(`欢迎 ${escapeHtml(username)} 加入房间 "${escapeHtml(room)}"`);
+            currentUsernameSpan.textContent = escapeHtml(username);
+            currentRoomSpan.textContent = escapeHtml(room);
+        });
+
+        // 监听房间历史消息
+        socket.on('room history', (messages) => {
+            if (messages && messages.length > 0) {
+                addSystemMessage(`--- 已加载 ${messages.length} 条历史消息 ---`);
+                messages.forEach(msg => {
+                    addMessage({
+                        username: msg.username,
+                        text: msg.message,
+                        time: msg.timestamp,
+                        socketId: socket.id
+                    });
                 });
-            });
-            addSystemMessage(`--- 历史消息加载完成 ---`);
-        }
-    });
+                addSystemMessage(`--- 历史消息加载完成 ---`);
+            }
+        });
 
-    // 监听用户列表更新
-    socket.on('user list', (users) => {
-        updateUserList(users);
-    });
+        // 监听用户列表更新
+        socket.on('user list', (users) => {
+            updateUserList(users);
+        });
 
-    // 监听聊天消息
-    socket.on('chat message', (data) => {
-        addMessage(data);
-    });
+        // 监听聊天消息
+        socket.on('chat message', (data) => {
+            addMessage(data);
+        });
 
-    // 监听系统消息
-    socket.on('system message', (data) => {
-        addSystemMessage(data.message);
-    });
+        // 监听系统消息
+        socket.on('system message', (data) => {
+            addSystemMessage(data.message);
+        });
 
-    // 监听用户离开
-    socket.on('user left', (data) => {
-        addSystemMessage(`${data.username} 离开了房间`);
-    });
+        // 监听用户离开
+        socket.on('user left', (data) => {
+            addSystemMessage(`${escapeHtml(data.username)} 离开了房间`);
+        });
 
-    // 监听错误
-    socket.on('error', (data) => {
-        alert(data.message);
-    });
+        // 监听错误
+        socket.on('error', (data) => {
+            console.error('服务器错误:', data);
+            alert(data.message || '发生错误,请稍后重试');
+        });
+    } catch (error) {
+        console.error('加入房间失败:', error);
+        alert('加入房间失败,请稍后重试');
+        isConnected = false;
+    }
 }
 
 // 显示聊天室界面
@@ -113,7 +237,10 @@ function leaveRoom() {
     if (socket) {
         socket.emit('leave room', { username: currentUsername, room: currentRoom });
         socket.disconnect();
+        socket = null;
+        isConnected = false;
     }
+    
     chatContainer.classList.add('hidden');
     loginContainer.classList.remove('hidden');
     chatBox.innerHTML = '';
@@ -131,19 +258,23 @@ function updateUserList(users) {
     userCount.textContent = users.length;
 
     users.forEach(user => {
+        if (!user || typeof user !== 'string') {
+            return;
+        }
+
         const userItem = document.createElement('div');
         userItem.className = `user-item ${user === currentUsername ? 'is-me' : ''}`;
 
         const avatar = document.createElement('div');
         avatar.className = 'user-avatar';
-        avatar.textContent = user.charAt(0).toUpperCase();
+        avatar.textContent = escapeHtml(user.charAt(0).toUpperCase());
 
         const userInfo = document.createElement('div');
         userInfo.className = 'user-info';
 
         const userName = document.createElement('div');
         userName.className = 'user-name';
-        userName.textContent = user;
+        userName.textContent = escapeHtml(user);
 
         const userStatus = document.createElement('div');
         userStatus.className = 'user-status online';
@@ -186,6 +317,10 @@ loadTheme();
 
 // 添加消息到聊天框
 function addMessage(data) {
+    if (!data || !data.username || !data.text) {
+        return;
+    }
+
     const div = document.createElement('div');
     const isMe = data.socketId === socket.id;
 
@@ -197,7 +332,7 @@ function addMessage(data) {
 
     const usernameSpan = document.createElement('div');
     usernameSpan.className = 'username';
-    usernameSpan.textContent = data.username;
+    usernameSpan.textContent = escapeHtml(data.username);
 
     const timeSpan = document.createElement('div');
     timeSpan.className = 'time';
@@ -208,7 +343,7 @@ function addMessage(data) {
 
     const contentSpan = document.createElement('div');
     contentSpan.className = 'content';
-    contentSpan.textContent = data.text;
+    contentSpan.textContent = data.text; // 使用 textContent 防止XSS
 
     div.appendChild(messageHeader);
     div.appendChild(contentSpan);
@@ -221,9 +356,13 @@ function addMessage(data) {
 
 // 添加系统消息
 function addSystemMessage(message) {
+    if (!message || typeof message !== 'string') {
+        return;
+    }
+
     const div = document.createElement('div');
     div.className = 'message system';
-    div.textContent = message;
+    div.textContent = message; // 使用 textContent 防止XSS
     chatBox.appendChild(div);
 
     // 自动滚动到底部
@@ -232,6 +371,10 @@ function addSystemMessage(message) {
 
 // 格式化时间
 function formatTime(timestamp) {
+    if (!timestamp) {
+        return '';
+    }
+
     const date = new Date(timestamp);
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
@@ -240,15 +383,29 @@ function formatTime(timestamp) {
 
 // 发送消息
 function sendMessage() {
-    const text = msgInput.value.trim();
-    if (text && socket) {
+    const text = msgInput.value;
+    
+    if (!text || typeof text !== 'string') {
+        return;
+    }
+
+    // 验证消息
+    const messageValidation = validateMessage(text);
+    if (!messageValidation.valid) {
+        alert(messageValidation.message);
+        return;
+    }
+
+    if (socket && isConnected) {
         socket.emit('chat message', {
             username: currentUsername,
             room: currentRoom,
-            text: text,
+            text: text.trim(),
             time: Date.now()
         });
         msgInput.value = '';
+    } else {
+        alert('未连接到服务器');
     }
 }
 
@@ -258,6 +415,7 @@ sendBtn.addEventListener('click', sendMessage);
 // 回车键发送
 msgInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
+        e.preventDefault();
         sendMessage();
     }
 });
@@ -265,12 +423,35 @@ msgInput.addEventListener('keypress', (e) => {
 // 回车键登录
 usernameInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
+        e.preventDefault();
         roomInput.focus();
     }
 });
 
 roomInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
+        e.preventDefault();
         joinRoom();
+    }
+});
+
+// 页面卸载时断开连接
+window.addEventListener('beforeunload', () => {
+    if (socket) {
+        socket.disconnect();
+    }
+});
+
+// 处理网络错误
+window.addEventListener('offline', () => {
+    if (isConnected) {
+        addSystemMessage('网络连接已断开');
+    }
+});
+
+window.addEventListener('online', () => {
+    if (!isConnected && currentUsername && currentRoom) {
+        addSystemMessage('网络已恢复,尝试重新连接...');
+        // 可以在这里添加自动重连逻辑
     }
 });
