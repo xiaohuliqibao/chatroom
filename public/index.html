@@ -4,22 +4,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>匿名聊天室</title>
+    <title>聊天室</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <div class="chat-header">
-            <h2>🔥 匿名聊天室</h2>
+    <!-- 登录界面 -->
+    <div class="login-container" id="login-container">
+        <div class="login-header">
+            <h1>欢迎来到聊天室</h1>
+            <p>输入您的昵称和房间号开始聊天</p>
         </div>
         
-        <div class="chat-box" id="chat-box">
-            <!-- 消息会动态插入到这里 -->
-            <div class="message system">欢迎来到聊天室！请畅所欲言。</div>
+        <div class="form-group">
+            <label for="username">用户昵称</label>
+            <input type="text" id="username" placeholder="请输入您的昵称" autocomplete="off" maxlength="20">
+        </div>
+        
+        <div class="form-group">
+            <label for="room">房间号</label>
+            <input type="text" id="room" placeholder="请输入房间号" autocomplete="off" maxlength="20">
+        </div>
+        
+        <button class="login-btn" id="join-btn">进入聊天室</button>
+    </div>
+
+    <!-- 聊天室界面 -->
+    <div class="chat-container hidden" id="chat-container">
+        <div class="chat-header">
+            <h2>聊天室</h2>
+            <div class="room-info">
+                <span id="current-username">用户</span>
+                <span>|</span>
+                <span id="current-room">房间号</span>
+            </div>
+            <div class="header-buttons">
+                <button class="theme-btn" id="theme-btn" title="切换夜间模式">
+                    <span class="theme-icon">🌙</span>
+                </button>
+                <button class="leave-btn" id="leave-btn">退出</button>
+            </div>
+        </div>
+        
+        <div class="chat-content">
+            <!-- 用户列表 -->
+            <div class="user-list" id="user-list">
+                <div class="user-list-header">
+                    <h3>在线用户</h3>
+                    <span class="user-count" id="user-count">0</span>
+                </div>
+                <div class="user-list-content" id="user-list-content">
+                    <!-- 用户列表会动态插入到这里 -->
+                </div>
+            </div>
+            
+            <!-- 聊天消息区域 -->
+            <div class="chat-box" id="chat-box">
+                <!-- 消息会动态插入到这里 -->
+            </div>
         </div>
 
         <div class="input-area">
-            <input type="text" id="msg-input" placeholder="输入消息..." autocomplete="off">
+            <input type="text" id="msg-input" placeholder="输入消息..." autocomplete="off" maxlength="500">
             <button id="send-btn">发送</button>
         </div>
     </div>
